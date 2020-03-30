@@ -259,7 +259,7 @@ func (cred *CredFetcher) requestk8sToken(nativeToken string) (k8sToken string) {
 
 func validToken(jwt string) bool {
   type payload struct {
-    Exp string `json:"exp"`
+    Exp int64 `json:"exp"`
   }
 
   jwtSplit := strings.Split(jwt, ".")
@@ -282,11 +282,8 @@ func validToken(jwt string) bool {
 		return false
 	}
 
-  expTime, err := time.Parse(time.RFC3339, structuredPayload.Exp)
-  if err != nil {
-    credentialLog.Errorf("failed to parse the time: %v", err)
-    return false
-  }
+  expTime := time.Unix(structuredPayload.Exp, 0)
+  credentialLog.Infof("k8s JWT expiration time: %v", expTime)
   return time.Now().Before(expTime)
 }
 
