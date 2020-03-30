@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -39,6 +38,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"istio.io/istio/security/pkg/nodeagent/cache"
+	"istio.io/istio/security/pkg/nodeagent/credentialfetcher"
 	"istio.io/istio/security/pkg/nodeagent/model"
 	"istio.io/pkg/log"
 )
@@ -125,6 +125,8 @@ type sdsservice struct {
 	jwtPath string
 
 	outputKeyCertToDir string
+
+	credFetcher *credentialfetcher.CredFetcher
 }
 
 // ClientDebug represents a single SDS connection to the ndoe agent
@@ -152,6 +154,14 @@ func newSDSService(st cache.SecretManager, skipTokenVerification, localJWT bool,
 		return nil
 	}
 
+  // TODO: liminw. Temporarily hardcode trustdomain, k8sns, k8ssa, apiserverip
+  // Need to pass these parameters through installer.
+  credFetcher, err := credentialfetcher.NewCredFetcher("GoogleComputeEngine", jwtPath,
+      "idnstest.svc.id.goog", "default", "test", "104.197.36.201")
+  if err != nil {
+    return nil
+  }
+
 	ret := &sdsservice{
 		st:                 st,
 		skipToken:          skipTokenVerification,
@@ -160,6 +170,7 @@ func newSDSService(st cache.SecretManager, skipTokenVerification, localJWT bool,
 		localJWT:           localJWT,
 		jwtPath:            jwtPath,
 		outputKeyCertToDir: outputKeyCertToDir,
+		credFetcher:        credFetcher,
 	}
 
 	go ret.clearStaledClientsJob()
@@ -281,12 +292,11 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 			conIDresourceNamePrefix := sdsLogPrefix(resourceName)
 			if s.localJWT {
 				// Running in-process, no need to pass the token from envoy to agent as in-context - use the file
-				tok, err := ioutil.ReadFile(s.jwtPath)
-				if err != nil {
-					sdsServiceLog.Errorf("Failed to get credential token: %v", err)
-					return err
-				}
-				token = string(tok)
+    		token, err = s.credFetcher.Getk8sJwt()
+		    if err != nil {
+			    sdsServiceLog.Errorf("Failed to get credential token: %v", err)
+			    return err
+    		}
 			} else if s.outputKeyCertToDir != "" {
 				// Using existing certs and the new SDS - skipToken case is for the old node agent.
 			} else if !s.skipToken {
@@ -397,12 +407,12 @@ func (s *sdsservice) FetchSecrets(ctx context.Context, discReq *xdsapi.Discovery
 	token := ""
 	if s.localJWT {
 		// Running in-process, no need to pass the token from envoy to agent as in-context - use the file
-		tok, err := ioutil.ReadFile(s.jwtPath)
+		t, err := s.credFetcher.Getk8sJwt()
 		if err != nil {
 			sdsServiceLog.Errorf("Failed to get credential token: %v", err)
 			return nil, err
 		}
-		token = string(tok)
+		token = t
 	} else if !s.skipToken {
 		t, err := getCredentialToken(ctx)
 		if err != nil {
@@ -604,7 +614,7 @@ func pushSDS(con *sdsConnection) error {
 			string(secret.RootCert))
 	} else {
 		sdsServiceLog.Infof("%s pushed key/cert pair to proxy", conIDresourceNamePrefix)
-		sdsServiceLog.Debugf("%s pushed certificate chain %+v to proxy",
+		sdsServiceLog.Infof("%s pushed certificate chain %+v to proxy",
 			conIDresourceNamePrefix, string(secret.CertificateChain))
 	}
 	totalPushCounts.Increment()
@@ -702,3 +712,4 @@ func sdsLogPrefix(resourceName string) string {
 	lPrefix := fmt.Sprintf("resource:%s", resourceName)
 	return lPrefix
 }
+

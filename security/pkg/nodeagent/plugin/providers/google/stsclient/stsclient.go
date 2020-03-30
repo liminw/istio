@@ -28,13 +28,16 @@ import (
 	"time"
 
 	"istio.io/istio/security/pkg/nodeagent/plugin"
-	"istio.io/pkg/env"
+//	"istio.io/pkg/env"
 	"istio.io/pkg/log"
 )
 
 var (
 	// GKEClusterURL is the URL to send requests to the token exchange service.
-	GKEClusterURL = env.RegisterStringVar("GKE_CLUSTER_URL", "", "The url of GKE cluster").Get()
+//	GKEClusterURL = env.RegisterStringVar("GKE_CLUSTER_URL", "", "The url of GKE cluster").Get()
+  // TODO: liminw ASM. Should be passed in config.
+  GKEClusterURL = "https://container.googleapis.com/v1/projects/idnstest/locations/us-central1-a/clusters/asm"
+
 	// SecureTokenEndpoint is the Endpoint the STS client calls to.
 	SecureTokenEndpoint = "https://securetoken.googleapis.com/v1/identitybindingtoken"
 	stsClientLog        = log.RegisterScope("stsclient", "STS client debugging", 0)

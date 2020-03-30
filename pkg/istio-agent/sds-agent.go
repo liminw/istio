@@ -57,14 +57,17 @@ import (
 // Or disable the jwt validation while debugging SDS problems.
 
 var (
-	caProviderEnv = env.RegisterStringVar(caProvider, "Citadel", "").Get()
+  // ASM (TODO:liminw installer to config)
+	caProviderEnv = env.RegisterStringVar(caProvider, "GoogleCA", "").Get()
 	// TODO: default to same as discovery address
-	caEndpointEnv = env.RegisterStringVar(caEndpoint, "", "").Get()
+  // ASM (TODO:liminw installer to config)
+	caEndpointEnv = env.RegisterStringVar(caEndpoint, "meshca.googleapis.com:443", "").Get()
 
-	pluginNamesEnv             = env.RegisterStringVar(pluginNames, "", "").Get()
+	pluginNamesEnv             = env.RegisterStringVar(pluginNames, "GoogleTokenExchange", "").Get()
 	enableIngressGatewaySDSEnv = env.RegisterBoolVar(enableIngressGatewaySDS, false, "").Get()
 
-	trustDomainEnv = env.RegisterStringVar(trustDomain, "", "").Get()
+  // ASM (TODO:liminw installer to config)
+	trustDomainEnv = env.RegisterStringVar(trustDomain, "idnstest.svc.id.goog", "").Get()
 	secretTTLEnv   = env.RegisterDurationVar(secretTTL, 24*time.Hour,
 		"The cert lifetime requested by istio agent").Get()
 	secretRotationGracePeriodRatioEnv = env.RegisterFloatVar(secretRotationGracePeriodRatio, 0.5,
@@ -185,7 +188,7 @@ func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, 
 		log.Fatalf("Invalid discovery address %v %v", discAddr, err)
 	}
 
-	if _, err := os.Stat(jwtPath); err == nil && citadel.ProvCert == "" {
+	if citadel.ProvCert == "" {
 		// If the JWT file exists, and explicit 'prov cert' is not - use the JWT
 		ac.JWTPath = jwtPath
 	} else {
@@ -204,15 +207,6 @@ func NewSDSAgent(discAddr string, tlsRequired bool, pilotCertProvider, jwtPath, 
 
 		if ac.CertsPath != "" {
 			log.Warna("Using existing certificate ", ac.CertsPath)
-		} else {
-			// Can't use in-process SDS.
-			log.Warna("Missing JWT token, can't use in process SDS ", jwtPath, err)
-
-			// TODO do not special case port 15012
-			if discPort == "15012" {
-				log.Fatala("Missing JWT, can't authenticate with control plane. Try using plain text (15010)")
-			}
-			return ac
 		}
 	}
 
