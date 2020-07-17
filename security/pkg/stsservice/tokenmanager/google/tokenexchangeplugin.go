@@ -29,6 +29,7 @@ import (
 
 	"istio.io/pkg/log"
 
+	credPlugin "istio.io/istio/security/pkg/credentialfetcher/plugin"
 	"istio.io/istio/security/pkg/stsservice"
 )
 
@@ -51,11 +52,13 @@ var (
 	// default grace period in seconds of an access token. If caching is enabled and token remaining life time is
 	// within this period, refresh access token.
 	defaultGracePeriod = 300
+	GCEProvider        = "GoogleComputeEngine"
 )
 
 // Plugin supports token exchange with Google OAuth 2.0 authorization server.
 type Plugin struct {
 	httpClient  *http.Client
+	platform    string
 	trustDomain string
 	// tokens is the cache for fetched tokens.
 	// map key is token type, map value is tokenInfo.
@@ -70,7 +73,7 @@ type Plugin struct {
 }
 
 // CreateTokenManagerPlugin creates a plugin that fetches token from a Google OAuth 2.0 authorization server.
-func CreateTokenManagerPlugin(trustDomain, gcpProjectNumber, gkeClusterURL string, enableCache bool) (*Plugin, error) {
+func CreateTokenManagerPlugin(platform, trustDomain, gcpProjectNumber, gkeClusterURL string, enableCache bool) (*Plugin, error) {
 	caCertPool, err := x509.SystemCertPool()
 	if err != nil {
 		pluginLog.Errorf("Failed to get SystemCertPool: %v", err)
@@ -85,6 +88,7 @@ func CreateTokenManagerPlugin(trustDomain, gcpProjectNumber, gkeClusterURL strin
 				},
 			},
 		},
+		platform:         platform,
 		trustDomain:      trustDomain,
 		gcpProjectNumber: gcpProjectNumber,
 		gkeClusterURL:    gkeClusterURL,
@@ -152,12 +156,22 @@ func (p *Plugin) useCachedToken() ([]byte, bool) {
 	return nil, false
 }
 
+// Construct the audience field for GetFederatedToken request.
+func (p *Plugin) constructAudience() string {
+	switch p.platform {
+	case credPlugin.GCE:
+		return fmt.Sprintf("identitynamespace:%s:%s", p.trustDomain, GCEProvider)
+	default: // platform is "k8s" or not set
+		return fmt.Sprintf("identitynamespace:%s:%s", p.trustDomain, p.gkeClusterURL)
+	}
+}
+
 // constructFederatedTokenRequest returns an HTTP request for federated token.
 // Example of a federated token request:
 // POST https://securetoken.googleapis.com/v1/identitybindingtoken
 // Content-Type: application/json
 // {
-//    audience: <trust domain>
+//    audience: <trust domain>:<provider>
 //    grantType: urn:ietf:params:oauth:grant-type:token-exchange
 //    requestedTokenType: urn:ietf:params:oauth:token-type:access_token
 //    subjectTokenType: urn:ietf:params:oauth:token-type:jwt
@@ -169,7 +183,7 @@ func (p *Plugin) constructFederatedTokenRequest(parameters stsservice.StsRequest
 	if len(parameters.Scope) != 0 {
 		reqScope = parameters.Scope
 	}
-	aud := fmt.Sprintf("identitynamespace:%s:%s", p.trustDomain, p.gkeClusterURL)
+	aud := p.constructAudience()
 	query := map[string]string{
 		"audience":           aud,
 		"grantType":          parameters.GrantType,
