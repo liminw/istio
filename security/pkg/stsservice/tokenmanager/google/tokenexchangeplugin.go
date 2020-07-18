@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"istio.io/pkg/log"
+	"istio.io/istio/pkg/security"
 
-	credPlugin "istio.io/istio/security/pkg/credentialfetcher/plugin"
 	"istio.io/istio/security/pkg/stsservice"
 )
 
@@ -159,7 +159,7 @@ func (p *Plugin) useCachedToken() ([]byte, bool) {
 // Construct the audience field for GetFederatedToken request.
 func (p *Plugin) constructAudience() string {
 	switch p.platform {
-	case credPlugin.GCE:
+	case security.GCE:
 		return fmt.Sprintf("identitynamespace:%s:%s", p.trustDomain, GCEProvider)
 	default: // platform is "k8s" or not set
 		return fmt.Sprintf("identitynamespace:%s:%s", p.trustDomain, p.gkeClusterURL)
